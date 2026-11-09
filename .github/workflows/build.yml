@@ -26,16 +26,11 @@ jobs:
             kernel
           test "$(git -C kernel rev-parse --short=12 HEAD)" = "7fc8455b2fa8"
 
-      - name: Fetch Android Clang r563880c
+      - name: Check compiler
         run: |
-          mkdir -p toolchain/clang-r563880c
-          curl -fL --retry 3 \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/main/clang-r563880c.tar.gz \
-            -o clang.tar.gz
+          clang --version
+          ld.lld --version
 
-          tar -xzf clang.tar.gz -C toolchain/clang-r563880c
-          test -x toolchain/clang-r563880c/bin/clang
-          toolchain/clang-r563880c/bin/clang --version
 
 
 
