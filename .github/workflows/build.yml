@@ -86,7 +86,7 @@ jobs:
           export LLVM_IAS=1
 
           clang --version
-          make -C kernel O="$PWD/out" kona-perf_defconfig
+          make -C kernel O="$PWD/out" vendor/kona-perf_defconfig
 
           kernel/scripts/kconfig/merge_config.sh \
             -O "$PWD/out" \
