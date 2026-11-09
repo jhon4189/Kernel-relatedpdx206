@@ -28,14 +28,14 @@ jobs:
 
       - name: Fetch Android Clang r563880c
         run: |
-          mkdir -p toolchain
-          curl -fL --retry 3 \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r563880c.tar.gz \
-            -o clang.tar.gz
           mkdir -p toolchain/clang-r563880c
+          curl -fL --retry 3 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/master/clang-r563880c.tar.gz \
+            -o clang.tar.gz
           tar -xzf clang.tar.gz -C toolchain/clang-r563880c
           test -x toolchain/clang-r563880c/bin/clang
           toolchain/clang-r563880c/bin/clang --version
+
 
 
       - name: Find pdx206 defconfig
