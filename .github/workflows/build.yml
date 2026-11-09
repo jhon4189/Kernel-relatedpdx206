@@ -88,22 +88,20 @@ jobs:
           clang --version
           make -C kernel O="$PWD/out" vendor/kona-perf_defconfig
 
-          kernel/scripts/kconfig/merge_config.sh \
-            -O "$PWD/out" \
-            "$PWD/out/.config" \
-            "$PWD/kernel/arch/arm64/configs/vendor/edo.config" \
-            "$PWD/kernel/arch/arm64/configs/vendor/pdx206.config" \
-            "$PWD/nethunter.config"
+          cat \
+            kernel/arch/arm64/configs/vendor/edo.config \
+            kernel/arch/arm64/configs/vendor/pdx206.config \
+            nethunter.config \
+            >> out/.config
 
           make -C kernel O="$PWD/out" olddefconfig
-          set +e
-          make -C kernel O="$PWD/out" -j2 Image.gz-dtb \
-           > kernel-build.log 2>&1
-          status=$?
-          set -e
 
-          tail -n 150 kernel-build.log
-          exit "$status"
+          grep -E \
+            'CONFIG_(ARCH_SONY_EDO|MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303)=' \
+            out/.config || true
+
+          make -C kernel O="$PWD/out" -j2 Image.gz-dtb
+
 
 
 
