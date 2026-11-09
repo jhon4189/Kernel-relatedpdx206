@@ -17,7 +17,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             bc bison flex libssl-dev libelf-dev libncurses-dev \
-            cpio rsync python3 zip curl git make device-tree-compiler
+            cpio rsync python3 zip curl git make device-tree-compiler \
+            clang lld llvm
+
 
       - name: Fetch pinned Lineage kernel source
         run: |
@@ -30,9 +32,6 @@ jobs:
         run: |
           clang --version
           ld.lld --version
-
-
-
 
       - name: Find pdx206 defconfig
         id: defconfig
