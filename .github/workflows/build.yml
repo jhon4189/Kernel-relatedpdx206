@@ -20,16 +20,16 @@ jobs:
             bc bison flex libssl-dev libelf-dev libncurses-dev \
             cpio rsync python3 zip curl git make device-tree-compiler
 
-      - name: Resolve and fetch pinned kernel source
+      - name: Fetch Lineage kernel source
         run: |
-          FULL_SHA="$(
-            curl -fsSL \
-              https://api.github.com/repos/LineageOS/android_kernel_sony_sm8250/commits/g7fc8455b2fa8 \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])'
-          )"
+          mkdir kernel
+          git -C kernel init
+          git -C kernel remote add origin \
+            https://github.com/LineageOS/android_kernel_sony_sm8250.git
+          git -C kernel fetch --depth=1 origin lineage-23.2
+          git -C kernel -c advice.detachedHead=false \
+            checkout --detach FETCH_HEAD
 
-          echo "Full source revision: $FULL_SHA"
-          test "${#FULL_SHA}" -eq 40
 
           mkdir kernel
           git -C kernel init
