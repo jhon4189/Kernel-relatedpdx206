@@ -43,8 +43,10 @@ jobs:
           cat > nethunter.config <<'EOF'
           CONFIG_MAC80211=y
           CONFIG_WLAN=y
-          # Disable qca-wifi-host-cmn to avoid HTC symbol conflicts with ath9k
+          # Disable qca-wifi-host-cmn HTC to avoid symbol conflicts with ath9k HTC
           CONFIG_QCA_WIFI_HOST_CMN=n
+          CONFIG_QCA_WCN38XX=n
+          CONFIG_QCA_WCN67XX=n
           # MT76 USB wireless drivers
           CONFIG_MT76_CORE=y
           CONFIG_MT76x02_LIB=y
@@ -127,10 +129,20 @@ jobs:
           cat nethunter.config >> out/.config
           make -C kernel O="$PWD/out" olddefconfig
 
+          # Force-disable QCA modules that conflict with ath9k HTC
+          # These get selected as dependencies when CONFIG_WLAN=y
+          echo "Disabling conflicting QCA WiFi modules..."
+          # Remove QCA WCN entries entirely from config
+          sed -i '/^CONFIG_QCA_WCN38XX=/d' out/.config 2>/dev/null || true
+          sed -i '/^CONFIG_QCA_WCN67XX=/d' out/.config 2>/dev/null || true
+          # Force-set qca-wifi-host-cmn to n
+          sed -i 's/^CONFIG_QCA_WIFI_HOST_CMN=.*/# Disable: conflicts with ath9k HTC/' out/.config 2>/dev/null || true
+          echo 'CONFIG_QCA_WIFI_HOST_CMN=n' >> out/.config 2>/dev/null || true
+
+          make -C kernel O="$PWD/out" olddefconfig
+
           echo "Resolved NetHunter configuration:"
-          grep -E \
-            'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303|DEAUTH|INJECTION)=' \
-            out/.config || true
+          grep -E 'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303)=' out/.config || true
 
           # Verify critical NetHunter configs are enabled
           if ! grep -q '^CONFIG_ATH9K_HTC=y' out/.config; then
