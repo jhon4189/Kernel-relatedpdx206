@@ -38,15 +38,47 @@ jobs:
           test -f kernel/arch/arm64/configs/vendor/edo.config
           test -f kernel/arch/arm64/configs/vendor/pdx206.config
 
-      - name: Create NetHunter configuration fragment
+      - name: Patch Kconfig to disable QCA WiFi (fixes HTC symbol conflict)
         run: |
-          cat > nethunter.config <<'EOF'
+          set -euo pipefail
+          # Patch the wireless Kconfig to prevent WLAN from auto-selecting QCA vendor
+          # This is needed because CONFIG_WLAN selects WLAN_VENDOR_SELECT which
+          # auto-enables WLAN_VENDOR_QCA, causing HTC symbol conflicts with ath9k
+          if [ -f kernel/drivers/net/wireless/Kconfig ]; then
+            echo "Patching kernel Kconfig to disable QCA WiFi auto-selection..."
+            # Comment out lines that select WLAN_VENDOR_QCA under WLAN
+            sed -i 's/^config WLAN_VENDOR_QCA$/#config WLAN_VENDOR_QCA/' kernel/drivers/net/wireless/Kconfig
+          fi
+          if [ -f kernel/drivers/staging/qca-wifi-host-cmn/Kconfig ]; then
+            # Disable all QCA staging Kconfig entries
+            sed -i 's/^config .*/#config &/' kernel/drivers/staging/qca-wifi-host-cmn/Kconfig
+          fi
+
+      - name: Configure and build kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          mkdir -p out
+          clang --version
+
+          # Start with base defconfig
+          echo "Creating base configuration..."
+          make -C kernel O="$PWD/out" vendor/kona-perf_defconfig
+
+          # Merge device-specific configs (trimmed to remove QCA)
+          grep -v 'CONFIG_QCA_' kernel/arch/arm64/configs/vendor/pdx206.config > out/.config.pdx206 2>/dev/null || cp kernel/arch/arm64/configs/vendor/pdx206.config out/.config.pdx206
+          grep -v 'CONFIG_QCA_' kernel/arch/arm64/configs/vendor/edo.config > out/.config.edo 2>/dev/null || cp kernel/arch/arm64/configs/vendor/edo.config out/.config.edo
+          cat out/.config.edo out/.config.pdx206 >> out/.config
+
+          # Add NetHunter packet injection & deauth support
+          cat >> out/.config <<'NETHUNTER'
+          # NetHunter WiFi drivers with packet injection support
           CONFIG_MAC80211=y
           CONFIG_WLAN=y
-          # Disable qca-wifi-host-cmn HTC to avoid symbol conflicts with ath9k HTC
-          CONFIG_QCA_WIFI_HOST_CMN=n
-          CONFIG_QCA_WCN38XX=n
-          CONFIG_QCA_WCN67XX=n
           # MT76 USB wireless drivers
           CONFIG_MT76_CORE=y
           CONFIG_MT76x02_LIB=y
@@ -60,7 +92,7 @@ jobs:
           CONFIG_RT2800USB_UNKNOWN=y
           CONFIG_RT2X00_LIB=y
           CONFIG_RT2X00_LIB_FIRMWARE=y
-          # Atheros drivers (packet injection support)
+          # Atheros AR9001/AR9002 USB drivers (packet injection support)
           CONFIG_ATH_COMMON=y
           CONFIG_ATH9K_HW=y
           CONFIG_ATH9K_COMMON=y
@@ -98,51 +130,15 @@ jobs:
           CONFIG_MAC80211=y
           CONFIG_MAC80211_DEBUGFS=y
           CONFIG_MAC80211_LEDS=y
-          # IEEE80211 mesh and monitor mode
           CONFIG_IEEE80211=y
           CONFIG_IEEE80211_DEBUGFS=y
-          EOF
+          NETHUNTER
 
-      - name: Configure and build kernel
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
-
-          mkdir -p out
-          clang --version
-
-          if test -s configs/base.config; then
-            echo "Using configuration extracted from the device"
-            cp configs/base.config out/.config
-          else
-            echo "configs/base.config absent; using Lineage device defconfig"
-            make -C kernel O="$PWD/out" vendor/kona-perf_defconfig
-            cat \
-              kernel/arch/arm64/configs/vendor/edo.config \
-              kernel/arch/arm64/configs/vendor/pdx206.config \
-              >> out/.config
-          fi
-
-          cat nethunter.config >> out/.config
-          make -C kernel O="$PWD/out" olddefconfig
-
-          # Force-disable QCA modules that conflict with ath9k HTC
-          # These get selected as dependencies when CONFIG_WLAN=y
-          echo "Disabling conflicting QCA WiFi modules..."
-          # Remove QCA WCN entries entirely from config
-          sed -i '/^CONFIG_QCA_WCN38XX=/d' out/.config 2>/dev/null || true
-          sed -i '/^CONFIG_QCA_WCN67XX=/d' out/.config 2>/dev/null || true
-          # Force-set qca-wifi-host-cmn to n
-          sed -i 's/^CONFIG_QCA_WIFI_HOST_CMN=.*/# Disable: conflicts with ath9k HTC/' out/.config 2>/dev/null || true
-          echo 'CONFIG_QCA_WIFI_HOST_CMN=n' >> out/.config 2>/dev/null || true
-
+          # Apply NetHunter config with patched Kconfig
           make -C kernel O="$PWD/out" olddefconfig
 
           echo "Resolved NetHunter configuration:"
-          grep -E 'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303)=' out/.config || true
+          grep -E 'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303|WLAN)=' out/.config || true
 
           # Verify critical NetHunter configs are enabled
           if ! grep -q '^CONFIG_ATH9K_HTC=y' out/.config; then
@@ -160,7 +156,15 @@ jobs:
             exit 1
           fi
 
+          # Double-check QCA is not enabled (would cause HTC conflict)
+          if grep -q '^CONFIG_QCA_WIFI_HOST_CMN=y' out/.config 2>/dev/null; then
+            echo "ERROR: QCA WiFi host cmn still enabled - HTC symbol conflict will occur"
+            grep 'CONFIG_QCA_WIFI_HOST_CMN' out/.config
+            exit 1
+          fi
+
           echo "All required NetHunter configs validated successfully"
+          echo "Building kernel..."
 
           make -C kernel O="$PWD/out" -j2 Image.gz-dtb
 
