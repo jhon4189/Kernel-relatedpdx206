@@ -41,16 +41,63 @@ jobs:
         id: defconfig
         run: |
           DEFCONFIG="$(find kernel/arch/arm64/configs \
-            -maxdepth 1 -type f -name '*pdx206*defconfig' | head -n1)"
+            -type f -name '*pdx206*defconfig' | head -n1)"
 
           if [ -z "$DEFCONFIG" ]; then
-            echo "pdx206 defconfig was not found. Available defconfigs:"
-            find kernel/arch/arm64/configs -maxdepth 1 -type f -print
+            echo "pdx206 defconfig was not found. Available configs:"
+            find kernel/arch/arm64/configs -maxdepth 2 -type f -print
             exit 1
           fi
 
           echo "Using $DEFCONFIG"
           echo "path=$DEFCONFIG" >> "$GITHUB_OUTPUT"
+
+      - name: Create NetHunter configuration fragment
+        run: |
+          cat > nethunter.config <<'EOF'
+          CONFIG_MAC80211=y
+          CONFIG_WLAN=y
+
+          CONFIG_MT76_CORE=y
+          CONFIG_MT76x02_LIB=y
+          CONFIG_MT76x0U=y
+          CONFIG_MT76x2U=y
+
+          CONFIG_RT2X00=y
+          CONFIG_RT2800USB=y
+          CONFIG_RT2800USB_RT35XX=y
+          CONFIG_RT2800USB_RT53XX=y
+          CONFIG_RT2800USB_UNKNOWN=y
+
+          CONFIG_ATH_COMMON=y
+          CONFIG_ATH9K_HW=y
+          CONFIG_ATH9K_COMMON=y
+          CONFIG_ATH9K_HTC=y
+          CONFIG_CARL9170=y
+
+          CONFIG_USB_CONFIGFS_RNDIS=y
+          CONFIG_USB_CONFIGFS_ECM=y
+          CONFIG_USB_CONFIGFS_ECM_SUBSET=y
+          CONFIG_USB_CONFIGFS_ACM=y
+
+          CONFIG_USB_NET_DRIVERS=y
+          CONFIG_USB_USBNET=y
+          CONFIG_USB_NET_CDCETHER=y
+          CONFIG_USB_NET_CDC_NCM=y
+          CONFIG_USB_NET_RNDIS_HOST=y
+
+          CONFIG_USB_SERIAL_GENERIC=y
+          CONFIG_USB_SERIAL_CH341=y
+          CONFIG_USB_SERIAL_PL2303=y
+
+          CONFIG_TUN=y
+          CONFIG_USB_GADGET=y
+          CONFIG_USB_LIBCOMPOSITE=y
+          CONFIG_USB_CONFIGFS=y
+          CONFIG_USB_CONFIGFS_F_HID=y
+          CONFIG_USB_CONFIGFS_MASS_STORAGE=y
+          CONFIG_USB_STORAGE=y
+          EOF
 
       - name: Configure and build kernel
         env:
@@ -64,12 +111,45 @@ jobs:
 
           clang --version
           make -C kernel O="$PWD/out" "$DEFCONFIG"
+
+          kernel/scripts/kconfig/merge_config.sh \
+            -O "$PWD/out" \
+            "$PWD/out/.config" \
+            "$PWD/nethunter.config"
+
           make -C kernel O="$PWD/out" olddefconfig
+
+          grep -E \
+            'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303)=' \
+            out/.config
+
           make -C kernel O="$PWD/out" -j"$(nproc)" Image.gz-dtb
 
-      - name: Package boot image
+      - name: Package with AnyKernel3
         run: |
           test -f out/arch/arm64/boot/Image.gz-dtb
-          mkdir -p package
-          cp out/arch/arm64/boot/Image.gz-dtb package/
-          cp out/.config package/built-kernel.config
+
+          git clone --depth=1 \
+            https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cp anykernel.sh AnyKernel3/anykernel.sh
+
+          cd AnyKernel3
+          zip -r9 "$GITHUB_WORKSPACE/pdx206-nethunter-v1.zip" . \
+            -x '.git/*' '.github/*' 'README*' 'LICENSE*'
+
+      - name: Record outputs
+        run: |
+          sha256sum pdx206-nethunter-v1.zip \
+            > pdx206-nethunter-v1.zip.sha256
+          cp out/.config built-kernel.config
+
+      - name: Upload kernel package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdx206-nethunter-v1
+          path: |
+            pdx206-nethunter-v1.zip
+            pdx206-nethunter-v1.zip.sha256
+            built-kernel.config
