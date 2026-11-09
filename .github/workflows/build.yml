@@ -20,6 +20,10 @@ jobs:
             cpio rsync python3 zip curl git make device-tree-compiler \
             clang lld llvm
 
+      - name: Check compiler
+        run: |
+          clang --version
+          ld.lld --version
 
       - name: Fetch pinned Lineage kernel source
         run: |
@@ -27,11 +31,6 @@ jobs:
             https://github.com/LineageOS/android_kernel_sony_sm8250.git \
             kernel
           test "$(git -C kernel rev-parse --short=12 HEAD)" = "7fc8455b2fa8"
-
-      - name: Check compiler
-        run: |
-          clang --version
-          ld.lld --version
 
       - name: Find pdx206 defconfig
         id: defconfig
@@ -94,7 +93,6 @@ jobs:
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          export PATH="$PWD/toolchain/clang-r563880c/bin:$PATH"
           export LLVM=1
           export LLVM_IAS=1
 
