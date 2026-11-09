@@ -34,10 +34,9 @@ jobs:
 
       - name: Verify device configuration files
         run: |
-          test -f kernel/arch/arm64/configs/kona-perf_defconfig
+          test -f kernel/arch/arm64/configs/vendor/kona-perf_defconfig
           test -f kernel/arch/arm64/configs/vendor/edo.config
           test -f kernel/arch/arm64/configs/vendor/pdx206.config
-
 
       - name: Create NetHunter configuration fragment
         run: |
