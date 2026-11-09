@@ -43,20 +43,28 @@ jobs:
           cat > nethunter.config <<'EOF'
           CONFIG_MAC80211=y
           CONFIG_WLAN=y
+          # MT76 USB wireless drivers
           CONFIG_MT76_CORE=y
           CONFIG_MT76x02_LIB=y
           CONFIG_MT76x0U=y
           CONFIG_MT76x2U=y
+          # Ralink RT2800 USB drivers (packet injection support)
           CONFIG_RT2X00=y
           CONFIG_RT2800USB=y
           CONFIG_RT2800USB_RT35XX=y
           CONFIG_RT2800USB_RT53XX=y
           CONFIG_RT2800USB_UNKNOWN=y
+          CONFIG_RT2X00_LIB=y
+          CONFIG_RT2X00_LIB_FIRMWARE=y
+          # Atheros drivers (packet injection support)
           CONFIG_ATH_COMMON=y
           CONFIG_ATH9K_HW=y
           CONFIG_ATH9K_COMMON=y
-          # CONFIG_ATH9K_HTC is not set
+          CONFIG_ATH9K_HTC=y
+          # CARL9170 driver (packet injection)
           CONFIG_CARL9170=y
+          CONFIG_CARL9170_LED=y
+          # USB gadget and CDC Ethernet support for AP mode
           CONFIG_USB_CONFIGFS_RNDIS=y
           CONFIG_USB_CONFIGFS_ECM=y
           CONFIG_USB_CONFIGFS_ECM_SUBSET=y
@@ -66,44 +74,81 @@ jobs:
           CONFIG_USB_NET_CDCETHER=y
           CONFIG_USB_NET_CDC_NCM=y
           CONFIG_USB_NET_RNDIS_HOST=y
+          # Serial converters for wireless adapters
           CONFIG_USB_SERIAL_GENERIC=y
           CONFIG_USB_SERIAL_CH341=y
           CONFIG_USB_SERIAL_PL2303=y
+          # TUN/TAP for monitor mode and packet injection
           CONFIG_TUN=y
+          # USB gadget support
           CONFIG_USB_GADGET=y
           CONFIG_USB_LIBCOMPOSITE=y
           CONFIG_USB_CONFIGFS=y
           CONFIG_USB_CONFIGFS_F_HID=y
           CONFIG_USB_CONFIGFS_MASS_STORAGE=y
           CONFIG_USB_STORAGE=y
+          # Deauthentication and packet injection prerequisites
+          CONFIG_CFG80211=y
+          CONFIG_CFG80211_WEXT=y
+          CONFIG_CFG80211_DEBUGFS=y
+          CONFIG_MAC80211=y
+          CONFIG_MAC80211_DEBUGFS=y
+          CONFIG_MAC80211_LEDS=y
+          # IEEE80211 mesh and monitor mode
+          CONFIG_IEEE80211=y
+          CONFIG_IEEE80211_DEBUGFS=y
           EOF
 
       - name: Configure and build kernel
         run: |
+          set -euo pipefail
           export ARCH=arm64
           export SUBARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
 
+          mkdir -p out
           clang --version
-          make -C kernel O="$PWD/out" vendor/kona-perf_defconfig
 
-          cat \
-            kernel/arch/arm64/configs/vendor/edo.config \
-            kernel/arch/arm64/configs/vendor/pdx206.config \
-            nethunter.config \
-            >> out/.config
+          if test -s configs/base.config; then
+            echo "Using configuration extracted from the device"
+            cp configs/base.config out/.config
+          else
+            echo "configs/base.config absent; using Lineage device defconfig"
+            make -C kernel O="$PWD/out" vendor/kona-perf_defconfig
+            cat \
+              kernel/arch/arm64/configs/vendor/edo.config \
+              kernel/arch/arm64/configs/vendor/pdx206.config \
+              >> out/.config
+          fi
 
+          cat nethunter.config >> out/.config
           make -C kernel O="$PWD/out" olddefconfig
 
+          echo "Resolved NetHunter configuration:"
           grep -E \
-            'CONFIG_(ARCH_SONY_EDO|MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303)=' \
+            'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303|DEAUTH|INJECTION)=' \
             out/.config || true
 
+          # Verify critical NetHunter configs are enabled
+          if ! grep -q '^CONFIG_ATH9K_HTC=y' out/.config; then
+            echo "ERROR: CONFIG_ATH9K_HTC not enabled"
+            exit 1
+          fi
+
+          if ! grep -q '^CONFIG_RT2800USB=y' out/.config; then
+            echo "ERROR: CONFIG_RT2800USB not enabled"
+            exit 1
+          fi
+
+          if ! grep -q '^CONFIG_CARL9170=y' out/.config; then
+            echo "ERROR: CONFIG_CARL9170 not enabled"
+            exit 1
+          fi
+
+          echo "All required NetHunter configs validated successfully"
+
           make -C kernel O="$PWD/out" -j2 Image.gz-dtb
-
-
-
 
       - name: Package with AnyKernel3
         run: |
@@ -116,15 +161,13 @@ jobs:
 
           cat > AnyKernel3/anykernel.sh <<'EOF'
           properties() { '
-          kernel.string=NetHunter v1 for Xperia 5 II pdx206
+          kernel.string=Experimental NetHunter kernel for XQ-AS72 pdx206
           do.devicecheck=1
           do.modules=0
           do.systemless=1
           do.cleanup=1
           do.cleanuponabort=0
           device.name1=pdx206
-          device.name2=XQ-AS52
-          device.name3=XQ-AS62
           device.name4=XQ-AS72
           supported.versions=
           supported.patchlevels=
@@ -152,6 +195,9 @@ jobs:
           sha256sum pdx206-nethunter-v1.zip \
             > pdx206-nethunter-v1.zip.sha256
           cp out/.config built-kernel.config
+          git -C kernel rev-parse HEAD > kernel-source-commit.txt
+          clang --version > compiler-version.txt
+
 
       - name: Upload kernel package
         uses: actions/upload-artifact@v4
