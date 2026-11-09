@@ -96,7 +96,15 @@ jobs:
             "$PWD/nethunter.config"
 
           make -C kernel O="$PWD/out" olddefconfig
-          make -C kernel O="$PWD/out" -j"$(nproc)" Image.gz-dtb
+          set +e
+          make -C kernel O="$PWD/out" -j2 Image.gz-dtb \
+           > kernel-build.log 2>&1
+          status=$?
+          set -e
+
+          tail -n 150 kernel-build.log
+          exit "$status"
+
 
 
       - name: Package with AnyKernel3
