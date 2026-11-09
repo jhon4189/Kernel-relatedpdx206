@@ -6,7 +6,6 @@ on:
 permissions:
   contents: read
 
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,27 +19,14 @@ jobs:
             bc bison flex libssl-dev libelf-dev libncurses-dev \
             cpio rsync python3 zip curl git make device-tree-compiler
 
-      - name: Fetch Lineage kernel source
+      - name: Fetch pinned Lineage kernel source
         run: |
-          mkdir kernel
-          git -C kernel init
-          git -C kernel remote add origin \
-            https://github.com/LineageOS/android_kernel_sony_sm8250.git
-          git -C kernel fetch --depth=1 origin lineage-23.2
-          git -C kernel -c advice.detachedHead=false \
-            checkout --detach FETCH_HEAD
-
-
-          mkdir kernel
-          git -C kernel init
-          git -C kernel remote add origin \
-            https://github.com/LineageOS/android_kernel_sony_sm8250.git
-          git -C kernel fetch --depth=1 origin "$FULL_SHA"
-          git -C kernel -c advice.detachedHead=false \
-            checkout --detach FETCH_HEAD
+          git clone --depth=1 --branch lineage-23.2 \
+            https://github.com/LineageOS/android_kernel_sony_sm8250.git \
+            kernel
+          test "$(git -C kernel rev-parse --short=12 HEAD)" = "7fc8455b2fa8"
 
       - name: Fetch Android Clang r563880c
-
         run: |
           git clone --depth=1 --filter=blob:none --sparse \
             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
@@ -68,39 +54,32 @@ jobs:
           cat > nethunter.config <<'EOF'
           CONFIG_MAC80211=y
           CONFIG_WLAN=y
-
           CONFIG_MT76_CORE=y
           CONFIG_MT76x02_LIB=y
           CONFIG_MT76x0U=y
           CONFIG_MT76x2U=y
-
           CONFIG_RT2X00=y
           CONFIG_RT2800USB=y
           CONFIG_RT2800USB_RT35XX=y
           CONFIG_RT2800USB_RT53XX=y
           CONFIG_RT2800USB_UNKNOWN=y
-
           CONFIG_ATH_COMMON=y
           CONFIG_ATH9K_HW=y
           CONFIG_ATH9K_COMMON=y
           CONFIG_ATH9K_HTC=y
           CONFIG_CARL9170=y
-
           CONFIG_USB_CONFIGFS_RNDIS=y
           CONFIG_USB_CONFIGFS_ECM=y
           CONFIG_USB_CONFIGFS_ECM_SUBSET=y
           CONFIG_USB_CONFIGFS_ACM=y
-
           CONFIG_USB_NET_DRIVERS=y
           CONFIG_USB_USBNET=y
           CONFIG_USB_NET_CDCETHER=y
           CONFIG_USB_NET_CDC_NCM=y
           CONFIG_USB_NET_RNDIS_HOST=y
-
           CONFIG_USB_SERIAL_GENERIC=y
           CONFIG_USB_SERIAL_CH341=y
           CONFIG_USB_SERIAL_PL2303=y
-
           CONFIG_TUN=y
           CONFIG_USB_GADGET=y
           CONFIG_USB_LIBCOMPOSITE=y
@@ -112,7 +91,7 @@ jobs:
 
       - name: Configure and build kernel
         env:
-          DEFCONFIG: ${{ steps.defconfig.outputs.defconfig }}
+          DEFCONFIG: ${{ steps.defconfig.outputs.path }}
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
@@ -129,20 +108,13 @@ jobs:
             "$PWD/nethunter.config"
 
           make -C kernel O="$PWD/out" olddefconfig
-
-          grep -E \
-            'CONFIG_(MAC80211|MT76x2U|MT76x0U|RT2800USB|ATH9K_HTC|CARL9170|USB_CONFIGFS_F_HID|USB_CONFIGFS_RNDIS|USB_CONFIGFS_ECM|USB_SERIAL_PL2303)=' \
-            out/.config
-
           make -C kernel O="$PWD/out" -j"$(nproc)" Image.gz-dtb
 
       - name: Package with AnyKernel3
         run: |
           test -f out/arch/arm64/boot/Image.gz-dtb
-
           git clone --depth=1 \
             https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-
           cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           cp anykernel.sh AnyKernel3/anykernel.sh
 
