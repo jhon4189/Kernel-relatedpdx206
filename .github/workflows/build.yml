@@ -1,10 +1,11 @@
 name: Build pdx206 NetHunter kernel
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
+
 
 jobs:
   build:
